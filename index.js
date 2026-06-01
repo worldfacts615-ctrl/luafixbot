@@ -75,8 +75,8 @@ function extractLua(content) {
   return match ? match[1].trim() : content.trim();
 }
 
-// ─── Groq API ────────────────────────────────────────
-async function callClaude(systemPrompt, userMessage) {
+// ─── AI Providers (Groq → Gemini fallback) ───────────
+async function callGroq(systemPrompt, userMessage) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -93,11 +93,70 @@ async function callClaude(systemPrompt, userMessage) {
     }),
   });
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Groq error: ${err}`);
+    const data = await res.json().catch(() => ({}));
+    // Kalau rate limit (429) atau service unavailable (503), lempar error khusus
+    const isLimit = res.status === 429 || res.status === 503;
+    throw { isLimit, message: `Groq error ${res.status}: ${data.error?.message || "unknown"}` };
   }
   const data = await res.json();
-  return data.choices[0].message.content.trim();
+  return { text: data.choices[0].message.content.trim(), provider: "Groq" };
+}
+
+async function callGemini(systemPrompt, userMessage) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+        generationConfig: { maxOutputTokens: 2048 },
+      }),
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(`Gemini error ${res.status}: ${data.error?.message || "unknown"}`);
+  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini tidak mengembalikan teks");
+  return { text: text.trim(), provider: "Gemini" };
+}
+
+// Fungsi utama dengan fallback otomatis
+async function callClaude(systemPrompt, userMessage) {
+  // Coba Groq dulu
+  if (process.env.GROQ_API_KEY) {
+    try {
+      return (await callGroq(systemPrompt, userMessage)).text;
+    } catch (err) {
+      if (err.isLimit) {
+        console.warn("⚠️ Groq rate limit, beralih ke Gemini...");
+      } else {
+        console.error("Groq error:", err.message);
+      }
+      // Lanjut ke Gemini
+    }
+  }
+  // Fallback ke Gemini
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      return (await callGemini(systemPrompt, userMessage)).text;
+    } catch (err) {
+      throw new Error(`Semua AI provider gagal. Error Gemini: ${err.message}`);
+    }
+  }
+  throw new Error("Tidak ada AI provider yang dikonfigurasi. Set GROQ_API_KEY atau GEMINI_API_KEY.");
+}
+
+// Cek provider yang aktif saat startup
+function getActiveProviders() {
+  const providers = [];
+  if (process.env.GROQ_API_KEY) providers.push("Groq (llama-3.3-70b)");
+  if (process.env.GEMINI_API_KEY) providers.push("Gemini (gemini-1.5-flash)");
+  return providers;
 }
 
 // ─── Slash Commands ───────────────────────────────────
@@ -394,8 +453,13 @@ Pengurangan: Z%]`;
 
 // ─── Events ───────────────────────────────────────────
 client.once("ready", () => {
+  const providers = getActiveProviders();
   console.log(`✅ Bot aktif sebagai ${client.user.tag}`);
-  client.user.setActivity("/cleanlua | Powered by Groq", { type: 3 });
+  console.log(`🤖 AI Providers aktif: ${providers.join(" → ") || "TIDAK ADA!"}`);
+  if (providers.length === 0) {
+    console.error("❌ WARNING: Set GROQ_API_KEY dan/atau GEMINI_API_KEY di environment variables!");
+  }
+  client.user.setActivity("/cleanlua | Groq + Gemini", { type: 3 });
 });
 
 client.on("interactionCreate", async (interaction) => {
