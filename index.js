@@ -131,37 +131,61 @@ async function callGroq(systemPrompt, userMessage) {
   return { text: data.choices[0].message.content.trim(), provider: "Groq" };
 }
 
-// Fungsi utama: Gemini dulu → fallback ke Groq
+// Potong teks jika terlalu panjang untuk Groq (~10000 karakter aman)
+function truncateForGroq(text, maxChars = 9000) {
+  if (text.length <= maxChars) return { text, truncated: false };
+  // Potong di baris terakhir yang masuk limit
+  const cut = text.lastIndexOf("\n", maxChars);
+  const pos = cut > 0 ? cut : maxChars;
+  return {
+    text: text.slice(0, pos) + "\n-- [Script dipotong karena terlalu panjang, fokus pada bagian ini]",
+    truncated: true,
+  };
+}
+
+// Fungsi utama: Gemini dulu (retry 1x jika rate limit) → fallback Groq
 async function callClaude(systemPrompt, userMessage) {
   // Coba Gemini dulu (lebih pintar untuk kode kompleks)
   if (process.env.GEMINI_API_KEY) {
-    try {
-      return (await callGemini(systemPrompt, userMessage)).text;
-    } catch (err) {
-      if (err.isLimit) {
-        console.warn("⚠️ Gemini rate limit, beralih ke Groq...");
-      } else {
-        console.error("Gemini error:", err.message);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return (await callGemini(systemPrompt, userMessage)).text;
+      } catch (err) {
+        if (err.isLimit && attempt === 1) {
+          console.warn("⚠️ Gemini rate limit, tunggu 15 detik lalu coba lagi...");
+          await new Promise(r => setTimeout(r, 15000));
+        } else if (err.isLimit && attempt === 2) {
+          console.warn("⚠️ Gemini masih rate limit setelah retry, beralih ke Groq...");
+          break;
+        } else {
+          console.error("Gemini error:", err.message);
+          break; // Error bukan rate limit, langsung ke Groq
+        }
       }
-      // Lanjut ke Groq
     }
   }
-  // Fallback ke Groq
+
+  // Fallback ke Groq — potong script jika terlalu besar
   if (process.env.GROQ_API_KEY) {
     try {
-      return (await callGroq(systemPrompt, userMessage)).text;
+      const { text: safeMessage, truncated } = truncateForGroq(userMessage);
+      if (truncated) {
+        console.warn("⚠️ Script dipotong karena terlalu besar untuk Groq");
+      }
+      return (await callGroq(systemPrompt, safeMessage)).text;
     } catch (err) {
       throw new Error(`Semua AI provider gagal. Error Groq: ${err.message}`);
     }
   }
+
   throw new Error("Tidak ada AI provider yang dikonfigurasi. Set GEMINI_API_KEY atau GROQ_API_KEY.");
 }
 
 // Cek provider yang aktif saat startup
 function getActiveProviders() {
   const providers = [];
-  if (process.env.GEMINI_API_KEY) providers.push("Gemini (gemini-2.0-flash)");
-  if (process.env.GEMINI_API_KEY) providers.push("Gemini (gemini-1.5-flash)");
+  if (process.env.GEMINI_API_KEY) providers.push("Gemini 2.0 Flash");
+  if (process.env.GROQ_API_KEY) providers.push("Groq llama-3.3-70b [backup]");
   return providers;
 }
 
