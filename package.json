@@ -1,0 +1,15 @@
+{
+  "name": "lua-fix-bot",
+  "version": "1.0.0",
+  "description": "Discord bot untuk fix script Lua/Roblox powered by Claude AI",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}
