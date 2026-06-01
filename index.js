@@ -27,25 +27,28 @@ const client = new Client({
 // Ambil ID paste dari URL pastefy
 function parsePastefyId(input) {
   input = input.trim();
-  // Format: https://pastefy.app/XXXX atau https://pastefy.app/XXXX/raw
-  const urlMatch = input.match(/pastefy\.app\/([A-Za-z0-9]+)/);
+  // Hapus trailing slash, /raw, /download, dsb
+  // Format: https://pastefy.app/XXXX atau pastefy.app/XXXX/raw dll
+  const urlMatch = input.match(/pastefy\.app\/([A-Za-z0-9_-]+)/i);
   if (urlMatch) return urlMatch[1];
-  // Kalau langsung ID (misal: iXUlzofQ)
-  if (/^[A-Za-z0-9]{6,12}$/.test(input)) return input;
+  // Kalau langsung ID saja (misal: 3JHyDSEo)
+  if (/^[A-Za-z0-9_-]{4,20}$/.test(input)) return input;
   return null;
 }
 
 // Ambil konten paste dari Pastefy API
 async function fetchPaste(pasteId) {
-  const res = await fetch(`https://pastefy.app/api/v2/paste/${pasteId}`, {
-    headers: process.env.PASTEFY_API_KEY
-      ? { Authorization: `Bearer ${process.env.PASTEFY_API_KEY}` }
-      : {},
-  });
+  const headers = { "Accept": "application/json" };
+  if (process.env.PASTEFY_API_KEY) {
+    headers["Authorization"] = `Bearer ${process.env.PASTEFY_API_KEY}`;
+  }
+  const res = await fetch(`https://pastefy.app/api/v2/paste/${pasteId}`, { headers });
   if (!res.ok) throw new Error(`Paste tidak ditemukan atau private (HTTP ${res.status})`);
   const data = await res.json();
-  if (!data.paste) throw new Error("Paste tidak valid atau sudah dihapus");
-  return data.paste;
+  // API Pastefy v2: { paste: { id, content, title, ... } }
+  const paste = data.paste || data;
+  if (!paste || !paste.content) throw new Error("Paste tidak memiliki konten");
+  return paste;
 }
 
 // Upload hasil fix ke Pastefy, return URL
@@ -214,9 +217,22 @@ async function registerCommands() {
 
 // ─── Resolve input: bisa kode langsung atau link pastefy ─
 async function resolveScript(input) {
+  const isPastefyUrl = input.includes("pastefy.app");
   const pasteId = parsePastefyId(input);
-  if (pasteId && (input.includes("pastefy.app") || !/[\n;]/.test(input))) {
-    // Coba ambil dari Pastefy
+
+  if (pasteId && isPastefyUrl) {
+    // Input jelas URL Pastefy — wajib berhasil, lempar error kalau gagal
+    const paste = await fetchPaste(pasteId);
+    return {
+      script: extractLua(paste.content),
+      source: `pastefy.app/${paste.id}`,
+      title: paste.title || "Lua Script",
+      fromPastefy: true,
+    };
+  }
+
+  if (pasteId && !/[\n;{}]/.test(input)) {
+    // Input mungkin ID Pastefy (tidak ada newline/kode) — coba fetch, tapi tidak masalah kalau gagal
     try {
       const paste = await fetchPaste(pasteId);
       return {
@@ -226,9 +242,11 @@ async function resolveScript(input) {
         fromPastefy: true,
       };
     } catch (e) {
-      // Kalau gagal fetch, anggap input adalah kode biasa
+      console.log("Bukan ID Pastefy, anggap kode biasa:", e.message);
     }
   }
+
+  // Input adalah kode Lua langsung
   return { script: input.trim(), source: null, title: "Lua Script", fromPastefy: false };
 }
 
