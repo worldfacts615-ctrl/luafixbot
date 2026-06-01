@@ -264,14 +264,23 @@ async function handleFixLua(interaction) {
 
   const { script, source, title } = scriptInfo;
 
-  const systemPrompt = `Kamu adalah ahli Lua dan Roblox Luau. Perbaiki script Lua yang diberikan.
+  const systemPrompt = `Kamu adalah ahli Lua dan Roblox Luau. Tugasmu HANYA memperbaiki bug dan error pada script Lua yang diberikan.
+
+ATURAN WAJIB — JANGAN DILANGGAR:
+1. JANGAN hapus, ubah, atau sederhanakan SATU PUN fungsi atau fitur yang sudah ada
+2. JANGAN ubah struktur program secara keseluruhan
+3. JANGAN gabungkan atau pisahkan fungsi yang ada
+4. HANYA perbaiki: syntax error, logic error yang jelas, typo nama fungsi/service
+5. Pertahankan 100% semua: DataStore calls, Remote Events, collision groups, cache, event listeners
+6. Jika ragu apakah sesuatu adalah bug atau fitur — PERTAHANKAN saja
+7. Output harus bisa langsung dijalankan di Roblox Studio
 
 Format responmu HARUS persis seperti ini (gunakan pemisah ---SPLIT---):
 BUGS:
-[daftar bug yang ditemukan, satu per baris, awali nomor dan baris jika tahu. Jika tidak ada tulis: Tidak ada bug ditemukan.]
+[daftar bug yang ditemukan, satu per baris, format: "Baris X: deskripsi masalah". Jika tidak ada tulis: Tidak ada bug ditemukan.]
 ---SPLIT---
 FIXED:
-[script yang sudah diperbaiki, hanya kode Lua murni tanpa penjelasan tambahan]
+[script yang sudah diperbaiki, kode Lua murni saja, TANPA markdown backtick, TANPA penjelasan]
 ---SPLIT---
 PENJELASAN:
 [penjelasan singkat perubahan, maksimal 3 poin]`;
@@ -404,29 +413,41 @@ async function handleCleanLua(interaction) {
     : `- Pertahankan semua komentar yang masih relevan
 - Jangan ubah nama variabel kecuali typo jelas`;
 
-  const systemPrompt = `Kamu adalah ahli Lua dan Roblox Luau. Tugasmu: BERSIHKAN dan PERBAIKI script Lua secara menyeluruh.
+  const systemPrompt = `Kamu adalah ahli Lua dan Roblox Luau. Tugasmu: BERSIHKAN dan RAPIKAN script Lua TANPA menghilangkan satu pun logic/fitur yang ada.
 
-Yang harus dilakukan:
-1. PERBAIKI semua bug, error sintaks, dan logic error
-2. HAPUS kode mati (dead code): variabel tidak terpakai, fungsi tidak dipanggil, blok if tidak mungkin tercapai
-3. HAPUS duplikasi kode: gabungkan bagian yang berulang
-4. RAPIKAN format: indentasi konsisten 2 spasi, spasi antar blok, penamaan konsisten (camelCase)
-5. OPTIMALKAN: ganti pola tidak efisien (loop berlebihan, string concat dalam loop, busy-wait)
-6. ROBLOX BEST PRACTICE: gunakan LocalScript/Script dengan benar, gunakan events bukan polling
+ATURAN WAJIB — INI YANG BOLEH DILAKUKAN:
+✅ Rename variabel tidak jelas (r1, r24, v3) menjadi nama deskriptif
+✅ Rapikan indentasi menjadi konsisten 2 spasi
+✅ Tambahkan komentar section (-- Services, -- DataStore, dll)
+✅ Hapus HANYA kode yang 100% tidak berfungsi: infinite loop kosong, dead code yang provably unreachable
+✅ Perbaiki bug sintaks dan typo
+
+ATURAN WAJIB — INI YANG DILARANG:
+❌ JANGAN hapus fungsi apapun meskipun terlihat redundan
+❌ JANGAN hapus DataStore calls (GetAsync, SetAsync)
+❌ JANGAN hapus Remote Events/Functions apapun
+❌ JANGAN hapus collision group rules
+❌ JANGAN hapus cache (gamepassCache, banListCache, dll)
+❌ JANGAN gabungkan atau pisahkan fungsi yang sudah ada
+❌ JANGAN sederhanakan logic yang kompleks — biarkan apa adanya
+❌ JANGAN ubah nama fungsi yang dipanggil dari luar script
+❌ JANGAN hapus event listeners (PlayerAdded, PlayerRemoving, dll)
 ${aggressiveNote}
+
+PENTING: Jika script asli menggunakan obfuscation/tamper detection — HAPUS seluruh bagian obfuscation tersebut, tapi PERTAHANKAN semua logic bisnis di dalamnya.
 
 Format HARUS persis seperti ini (gunakan pemisah ---SPLIT---):
 LAPORAN:
-[ringkasan semua yang dibersihkan/diperbaiki, format daftar bernomor dalam 3 kategori:
-🐛 Bug Diperbaiki: ...
-🧹 Kode Dibersihkan: ...
-✨ Dioptimalkan: ...]
+[ringkasan perubahan dalam 3 kategori:
+🐛 Bug Diperbaiki: (list atau "Tidak ada")
+🧹 Dibersihkan: (list rename variabel, hapus obfuscation, dll)
+✨ Dioptimalkan: (list atau "Tidak ada")]
 ---SPLIT---
 CLEAN:
-[script hasil bersih + fix, hanya kode Lua murni, tanpa penjelasan]
+[script hasil bersih, kode Lua murni saja, TANPA markdown backtick, TANPA penjelasan tambahan]
 ---SPLIT---
 STATS:
-[3 baris saja:
+[3 baris:
 Baris sebelum: X
 Baris sesudah: Y
 Pengurangan: Z%]`;
