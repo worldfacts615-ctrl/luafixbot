@@ -1,14 +1,14 @@
 // =====================================================
 // LuaFixBot — Discord bot untuk memperbaiki script Lua
-// Powered by Claude AI (Anthropic) + Pastefy.app
+// Powered by Groq AI (Gratis) + Pastefy.app
 // =====================================================
 // SETUP:
-// 1. npm install discord.js @anthropic-ai/sdk dotenv node-fetch
+// 1. npm install discord.js dotenv
 // 2. Buat file .env:
 //    DISCORD_TOKEN=token_bot_kamu
-//    ANTHROPIC_API_KEY=api_key_anthropic_kamu
+//    GROQ_API_KEY=api_key_groq_kamu
 //    CLIENT_ID=client_id_bot_kamu
-//    PASTEFY_API_KEY=api_key_pastefy_kamu  (opsional, untuk upload hasil)
+//    PASTEFY_API_KEY=api_key_pastefy_kamu  (opsional)
 // 3. node index.js
 // =====================================================
 
@@ -17,12 +17,10 @@ const {
   Client, GatewayIntentBits, REST, Routes,
   SlashCommandBuilder, EmbedBuilder, codeBlock,
 } = require("discord.js");
-const Anthropic = require("@anthropic-ai/sdk");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ─── Pastefy Helpers ─────────────────────────────────
 
@@ -77,15 +75,29 @@ function extractLua(content) {
   return match ? match[1].trim() : content.trim();
 }
 
-// ─── Claude API ───────────────────────────────────────
+// ─── Groq API ────────────────────────────────────────
 async function callClaude(systemPrompt, userMessage) {
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 2048,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+    }),
   });
-  return response.content[0].text.trim();
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq error: ${err}`);
+  }
+  const data = await res.json();
+  return data.choices[0].message.content.trim();
 }
 
 // ─── Slash Commands ───────────────────────────────────
@@ -383,7 +395,7 @@ Pengurangan: Z%]`;
 // ─── Events ───────────────────────────────────────────
 client.once("ready", () => {
   console.log(`✅ Bot aktif sebagai ${client.user.tag}`);
-  client.user.setActivity("/cleanlua | Lua Cleaner + Pastefy", { type: 3 });
+  client.user.setActivity("/cleanlua | Powered by Groq", { type: 3 });
 });
 
 client.on("interactionCreate", async (interaction) => {
