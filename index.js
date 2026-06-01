@@ -78,7 +78,33 @@ function extractLua(content) {
   return match ? match[1].trim() : content.trim();
 }
 
-// ─── AI Providers (Groq → Gemini fallback) ───────────
+// ─── AI Providers (Gemini → Groq fallback) ───────────
+
+async function callGemini(systemPrompt, userMessage) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.2 },
+      }),
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const isLimit = res.status === 429 || res.status === 503;
+    throw { isLimit, message: `Gemini error ${res.status}: ${data.error?.message || "unknown"}` };
+  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini tidak mengembalikan teks");
+  return { text: text.trim(), provider: "Gemini" };
+}
+
 async function callGroq(systemPrompt, userMessage) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -88,7 +114,8 @@ async function callGroq(systemPrompt, userMessage) {
     },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
-      max_tokens: 2048,
+      max_tokens: 8192,
+      temperature: 0.2,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -97,7 +124,6 @@ async function callGroq(systemPrompt, userMessage) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    // Kalau rate limit (429) atau service unavailable (503), lempar error khusus
     const isLimit = res.status === 429 || res.status === 503;
     throw { isLimit, message: `Groq error ${res.status}: ${data.error?.message || "unknown"}` };
   }
@@ -105,59 +131,36 @@ async function callGroq(systemPrompt, userMessage) {
   return { text: data.choices[0].message.content.trim(), provider: "Groq" };
 }
 
-async function callGemini(systemPrompt, userMessage) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
-        generationConfig: { maxOutputTokens: 2048 },
-      }),
-    }
-  );
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(`Gemini error ${res.status}: ${data.error?.message || "unknown"}`);
-  }
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini tidak mengembalikan teks");
-  return { text: text.trim(), provider: "Gemini" };
-}
-
-// Fungsi utama dengan fallback otomatis
+// Fungsi utama: Gemini dulu → fallback ke Groq
 async function callClaude(systemPrompt, userMessage) {
-  // Coba Groq dulu
-  if (process.env.GROQ_API_KEY) {
-    try {
-      return (await callGroq(systemPrompt, userMessage)).text;
-    } catch (err) {
-      if (err.isLimit) {
-        console.warn("⚠️ Groq rate limit, beralih ke Gemini...");
-      } else {
-        console.error("Groq error:", err.message);
-      }
-      // Lanjut ke Gemini
-    }
-  }
-  // Fallback ke Gemini
+  // Coba Gemini dulu (lebih pintar untuk kode kompleks)
   if (process.env.GEMINI_API_KEY) {
     try {
       return (await callGemini(systemPrompt, userMessage)).text;
     } catch (err) {
-      throw new Error(`Semua AI provider gagal. Error Gemini: ${err.message}`);
+      if (err.isLimit) {
+        console.warn("⚠️ Gemini rate limit, beralih ke Groq...");
+      } else {
+        console.error("Gemini error:", err.message);
+      }
+      // Lanjut ke Groq
     }
   }
-  throw new Error("Tidak ada AI provider yang dikonfigurasi. Set GROQ_API_KEY atau GEMINI_API_KEY.");
+  // Fallback ke Groq
+  if (process.env.GROQ_API_KEY) {
+    try {
+      return (await callGroq(systemPrompt, userMessage)).text;
+    } catch (err) {
+      throw new Error(`Semua AI provider gagal. Error Groq: ${err.message}`);
+    }
+  }
+  throw new Error("Tidak ada AI provider yang dikonfigurasi. Set GEMINI_API_KEY atau GROQ_API_KEY.");
 }
 
 // Cek provider yang aktif saat startup
 function getActiveProviders() {
   const providers = [];
-  if (process.env.GROQ_API_KEY) providers.push("Groq (llama-3.3-70b)");
+  if (process.env.GEMINI_API_KEY) providers.push("Gemini (gemini-2.0-flash)");
   if (process.env.GEMINI_API_KEY) providers.push("Gemini (gemini-1.5-flash)");
   return providers;
 }
@@ -498,7 +501,7 @@ client.once("ready", () => {
   if (providers.length === 0) {
     console.error("❌ WARNING: Set GROQ_API_KEY dan/atau GEMINI_API_KEY di environment variables!");
   }
-  client.user.setActivity("/cleanlua | Groq + Gemini", { type: 3 });
+  client.user.setActivity("/cleanlua | Gemini + Groq", { type: 3 });
 });
 
 client.on("interactionCreate", async (interaction) => {
