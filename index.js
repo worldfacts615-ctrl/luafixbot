@@ -228,6 +228,9 @@ const commands = [
         .setDescription("Hapus komentar lama & refactor lebih dalam (default: false)")
         .setRequired(false)
     ),
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Tampilkan semua perintah bot dan cara penggunaannya"),
 ].map((c) => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -517,6 +520,50 @@ Pengurangan: Z%]`;
   await interaction.editReply({ embeds: [reportEmbed, resultEmbed] });
 }
 
+// ─── /help ───────────────────────────────────────────
+async function handleHelp(interaction) {
+  const providers = getActiveProviders();
+
+  const embed = new EmbedBuilder()
+    .setTitle("📖 LuaFixBot — Daftar Perintah")
+    .setColor(0x5865f2)
+    .setDescription("Bot untuk memperbaiki, membersihkan, dan menganalisis script Lua/Roblox. Bisa input kode langsung atau link pastefy.app.")
+    .addFields(
+      {
+        name: "🔧 /fixlua",
+        value: "Perbaiki bug & error dalam script.\n`input` — Kode Lua atau link pastefy.app",
+      },
+      {
+        name: "🔍 /checklua",
+        value: "Cek & analisis bug tanpa memperbaiki.\n`input` — Kode Lua atau link pastefy.app",
+      },
+      {
+        name: "🧹 /cleanlua",
+        value: "Bersihkan + fix script: hapus obfuscation, rename variabel, rapikan format.\n`input` — Kode Lua atau link pastefy.app\n`aggressive` (opsional) — True untuk refactor lebih dalam",
+      },
+      {
+        name: "📚 /explainlua",
+        value: "Jelaskan apa yang dilakukan script dalam Bahasa Indonesia.\n`input` — Kode Lua atau link pastefy.app",
+      },
+      {
+        name: "❓ /help",
+        value: "Tampilkan pesan bantuan ini.",
+      },
+      {
+        name: "💡 Tips",
+        value: "Upload script ke pastefy.app lalu kirim linknya. Hasil fix otomatis diupload ke Pastefy baru.",
+      },
+      {
+        name: "🤖 AI Provider Aktif",
+        value: providers.length > 0 ? providers.join(" → ") : "Tidak ada provider aktif!",
+      }
+    )
+    .setFooter({ text: "LuaFixBot • Powered by Gemini + Groq" })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed], ephemeral: false });
+}
+
 // ─── Events ───────────────────────────────────────────
 client.once("ready", () => {
   const providers = getActiveProviders();
@@ -535,6 +582,7 @@ client.on("interactionCreate", async (interaction) => {
     else if (interaction.commandName === "checklua") await handleCheckLua(interaction);
     else if (interaction.commandName === "explainlua") await handleExplainLua(interaction);
     else if (interaction.commandName === "cleanlua") await handleCleanLua(interaction);
+    else if (interaction.commandName === "help") await handleHelp(interaction);
   } catch (err) {
     console.error("Error:", err);
     const msg = { content: "❌ Terjadi error. Coba lagi sebentar.", ephemeral: true };
